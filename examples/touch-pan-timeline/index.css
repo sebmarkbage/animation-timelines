@@ -1,0 +1,27 @@
+.container {
+  width: 300px;
+  height: 200px;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  position: relative;
+}
+
+.box {
+  position: absolute;
+  background: #f00;
+  width: 100px;
+  height: 100px;
+  top: 0px;
+  left: 100px;
+  border-radius: 9px;
+}
+
+.box2 {
+  position: absolute;
+  background: #00f;
+  width: 100px;
+  height: 100px;
+  top: 100px;
+  left: 100px;
+  border-radius: 9px;
+}

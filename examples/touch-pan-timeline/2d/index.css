@@ -1,0 +1,30 @@
+.container {
+  width: 300px;
+  height: 300px;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  position: relative;
+}
+
+.box {
+  position: absolute;
+  background: #f00;
+  top: 100px;
+  left: 100px;
+  width: 100px;
+  height: 100px;
+  border-radius: 9px;
+  transform: translate(var(--x), var(--y));
+}
+
+@property --x {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0;
+}
+
+@property --y {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0;
+}
