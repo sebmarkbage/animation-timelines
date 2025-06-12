@@ -39,7 +39,7 @@ function computeSubjectPositionWithinSource(subject, source, horizontal) {
 
 export default class ViewTimeline {
   constructor({ subject, axis, inset }) {
-    const horizontal = axis === "block" || axis === "x";
+    const horizontal = axis === "inline" || axis === "x";
     const source =
       findSource(subject.parentNode, horizontal) ||
       subject.ownerDocument.scrollingElement;
@@ -74,7 +74,7 @@ export default class ViewTimeline {
     const startOffset = this.startOffset;
     const endOffset = this.endOffset;
     const range = endOffset - startOffset;
-    if (axis === "block" || axis === "x") {
+    if (axis === "inline" || axis === "x") {
       return (100 * (source.scrollLeft - startOffset)) / range;
     } else {
       return (100 * (source.scrollTop - startOffset)) / range;

@@ -6,7 +6,7 @@ export default class ScrollTimeline {
   get currentTime() {
     const source = this.source;
     const axis = this.axis;
-    if (axis === "block" || axis === "x") {
+    if (axis === "inline" || axis === "x") {
       return (
         (100 * source.scrollLeft) / (source.scrollWidth - source.clientWidth)
       );
