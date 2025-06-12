@@ -13,12 +13,14 @@
   "files": [
     "LICENSE",
     "README.md",
-    "scroll-timeline.js"
+    "scroll-timeline.js",
+    "view-timeline.js"
   ],
   "type": "module",
   "exports": {
     ".": "./index.js",
     "./scroll-timeline": "./scroll-timeline.js",
+    "./view-timeline": "./view-timeline.js",
     "./package.json": "./package.json"
   },
   "repository": {
