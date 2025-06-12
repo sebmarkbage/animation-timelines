@@ -1,0 +1,28 @@
+{
+  "name": "animation-timelines",
+  "description": "A collection of Custom AnimationTimeline for use with Web Animations.",
+  "version": "0.0.1",
+  "keywords": [
+    "AnimationTimeline",
+    "ScrollTimeline",
+    "ViewTimeline"
+  ],
+  "homepage": "https://animation-timelines.vercel.app",
+  "bugs": "https://github.com/sebmarkbage/animation-timelines/issues",
+  "license": "MIT",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "scroll-timeline.js"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./scroll-timeline": "./scroll-timeline.js",
+    "./package.json": "./package.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sebmarkbage/animation-timelines.git"
+  }
+}

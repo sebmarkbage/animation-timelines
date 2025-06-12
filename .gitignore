@@ -1,0 +1,6 @@
+.vercel
+.DS_STORE
+node_modules
+*.sublime-project
+*.sublime-workspace
+.vscode
