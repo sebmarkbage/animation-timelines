@@ -9,7 +9,7 @@ The protocol for a custom timeline is:
 ```ts
 interface CustomTimeline {
   currentTime: number;
-  animate(animation: Animation): void | (() => void);
+  animate(animation: Animation): () => void;
 }
 ```
 
@@ -39,6 +39,14 @@ const animation = element.animate(..., {
   duration: 75, // end at 75%
 });
 timeline.animate(animation);
+```
+
+The `animate()` function returns a clean up function which removes any internal listeners that the timeline might have registered while running the animation. This lets you free that memory after you no longer need the animation. This should be called when the target element of the animation is no longer used - not the source element of the events to the timeline.
+
+```js
+const cleanup = timeline.animate();
+...
+cleanup();
 ```
 
 This protocol is also [supported by React](https://github.com/facebook/react/pull/33501) with the [`startGestureTransition` API](https://github.com/facebook/react/pull/32785).
