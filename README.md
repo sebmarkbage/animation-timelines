@@ -60,11 +60,14 @@ startGestureTransition(timeline, ...);
 This is a "ponyfill" for the [`ScrollTimeline`](https://developer.mozilla.org/en-US/docs/Web/API/ScrollTimeline) API. It can be used to drive an animation based on the current scroll position of an element, when the native one is not available.
 
 ```ts
-declare class ScrollTimeline {
-  constructor({
+
+interface ScrollTimeline extends CustomTimeline {
+  new(options: {
     source: Element,
-    axis: 'block' | 'inline' | 'x' | 'y',
-  })
+    axis?: 'block' | 'inline' | 'x' | 'y',
+  }): ScrollTimeline;
+  source: Element;
+  axis: 'block' | 'inline' | 'x' | 'y';
 }
 ```
 
@@ -75,4 +78,30 @@ const timeline = new ScrollTimelinePolyfill({ source: element, axis: 'x' })
 timeline.animate(animation);
 ```
 
-The timespan of the `Animation` spans `0` - `100` where `0` is when the scroll is at the beginning and `100` is when the scroll is at the end. Use `delay` and `duration` of the `Animation` to customize the start and end range.
+The `currentTime` of the `Animation` spans `0` - `100` where `0` is when the scroll is at the beginning and `100` is when the scroll is at the end. Use `delay` and `duration` of the `Animation` to customize the start and end range.
+
+## ViewTimeline
+
+This is a "ponyfill" for the [`ViewTimeline`](https://developer.mozilla.org/en-US/docs/Web/API/ViewTimeline) API. It can be used to drive an animation based on the current visibility of an element, when the native one is not available.
+
+```ts
+interface ViewTimeline extends ScrollTimeline {
+  new(options: {
+    subject: Element,
+    axis?: 'block' | 'inline' | 'x' | 'y',
+    inset?: 'auto' | number | ['auto' | number] | ['auto' | number, 'auto' | number],
+  }): ViewTimeline;
+  subject: Element;
+  startOffset: number;
+  endOffset: number;
+}
+```
+
+```js
+import ViewTimelinePolyfill from 'animation-timelines/view-timeline';
+
+const timeline = new ViewTimelinePolyfill({ subject: element, axis: 'x' })
+timeline.animate(animation);
+```
+
+The `currentTime` of the `Animation` spans `0` - `100` where `0` is when the subject is about to enter the visible range and `100` is when the subject is about the exit the visible range. Use `delay` and `duration` of the `Animation` to customize the start and end range.
