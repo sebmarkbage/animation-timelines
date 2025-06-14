@@ -8,10 +8,11 @@ const timeline = new TouchPanTimeline({
   source: container,
   axis: "x",
   range: [-100, 100],
-  snap: [0],
-//  snap: [-100, 0, 100],
+  // snap: 0,
+  snap: [-100, 0, 100],
 });
-const animation = box.animate({
+const animation = box.animate(
+  {
     transform: ["translateX(-100px)", "translateX(0)", "translateX(100px)"],
     //marginLeft: ['-100px', '0', '100px'],
     // border: ['0px solid #000', '100px solid #000']
@@ -20,11 +21,13 @@ const animation = box.animate({
     fill: "both",
     delay: 0,
     duration: 100,
+    //    direction: 'reverse',
   }
 );
 timeline.animate(animation);
 
-const animation2 = box2.animate({
+const animation2 = box2.animate(
+  {
     transform: ["translateX(-60px)", "translateX(0)", "translateX(60px)"],
   },
   {
@@ -35,10 +38,14 @@ const animation2 = box2.animate({
 );
 timeline.animate(animation2);
 
-container.addEventListener("touchstart", (event) => {
-  // Prevent scrolling
-  event.preventDefault();
-}, { passive: false});
+container.addEventListener(
+  "touchstart",
+  (event) => {
+    // Prevent scrolling
+    event.preventDefault();
+  },
+  { passive: false }
+);
 
 /*
 setInterval(() => {
@@ -46,3 +53,7 @@ setInterval(() => {
   while (performance.now() < end);
 }, 150);
 */
+
+addEventListener("error", (event) => {
+  alert(event.error.message);
+});

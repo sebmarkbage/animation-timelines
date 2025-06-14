@@ -1,21 +1,48 @@
 const frameRate = 1000 / 60; // linear steps we take but they're interpolated at higher frame rates.
 const minimumVelocity = 0.01; // pixels per millisecond
 
+const IDLE = 0;
+const PENDING_RESTART = 1;
+const PANNING = 2;
+const MOMENTUM = 3;
+
 function touchStart(event) {
+  if (this._status !== IDLE && this._status !== MOMENTUM) {
+    // Did not expect to start again.
+    return;
+  }
   this._previousEvent = event;
   this._velocity = 0;
+  this._pendingFinish = 0;
+  this._status = PENDING_RESTART;
+  const activeAnimations = this._activeAnimations;
+  // Pause all running animations
+  const allReady = [];
+  for (let i = 0; i < activeAnimations.length; i++) {
+    const animation = activeAnimations[i];
+    animation.removeEventListener('finish', this._finishListener);
+    animation.updatePlaybackRate(0);
+    allReady.push(animation.ready);
+  }
+  Promise.all(allReady).then(this._readyListener);
+}
+
+function readyToStart() {
+  if (this._status !== PENDING_RESTART) {
+    return; // We lifted the finger before we were able to stabelize it.
+  }
+  this._status = PANNING;
+  let inferredTime = 0;
   const activeAnimations = this._activeAnimations;
   const stashedEffects = this._stashedEffects;
   for (let i = 0; i < activeAnimations.length; i++) {
     const animation = activeAnimations[i];
-    if (animation.playState === "running") {
-      // TODO: Pause and then read back currentTime from the animations.
-    }
-    // Restore animation
+    console.log(animation.currentTime);
+    // Restore the original effect
     const stashedEffect = stashedEffects[i];
+    stashedEffects[i] = null;
     if (stashedEffect) {
       animation.effect = stashedEffect;
-      stashedEffects[i] = null;
     }
     animation.playbackRate = 0;
     animation.currentTime = this.currentTime;
@@ -27,6 +54,12 @@ function touchMove(event) {
   const previousEvent = this._previousEvent;
   this._previousEvent = event;
   if (!previousEvent) {
+    return;
+  }
+  if (this._status === IDLE) {
+    this._status = PANNING;
+  } else if (this._status !== PANNING) {
+    // We are waiting to cancel the previous animation.
     return;
   }
   const prevTouches = previousEvent.touches;
@@ -65,6 +98,11 @@ function touchMove(event) {
 }
 
 function touchEnd(event) {
+  if (this._status !== PANNING) {
+    // Unexpected.
+    return;
+  }
+  this._status = MOMENTUM;
   // Compute the distance we'll travel given the velocity upon release.
   let velocity = this._velocity;
   const decelerationRate = this.decelerationRate;
@@ -123,8 +161,6 @@ function touchEnd(event) {
     velocity = -velocity;
   }
 
-  const decelerationRatePerFrame = Math.pow(decelerationRate, frameRate);
-
   const activeAnimations = this._activeAnimations;
   const stashedEffects = this._stashedEffects;
   for (let i = 0; i < activeAnimations.length; i++) {
@@ -132,82 +168,122 @@ function touchEnd(event) {
     const effect = animation.effect;
     stashedEffects[i] = effect; // Stash so we can restore it later.
     const timing = effect.getTiming();
-    // delay and duration effectively work as rangeStart/End of the timeline. we clamp the destination.
-    const minTime = timing.delay;
-    const maxTime = timing.delay + timing.duration;
-    const clampedDestination =
-      destinationTime < minTime
-        ? minTime
-        : destinationTime > maxTime
-        ? maxTime
-        : destinationTime;
-    const clampedCurrent =
-      currentTime < minTime
-        ? minTime
-        : currentTime > maxTime
-        ? maxTime
-        : currentTime;
     const direction = timing.direction;
     const isReverseAnimation =
       direction === "reverse" || direction === "alternate-reverse";
-    // Playing in reverse direction deopts Safari so instead we play the easing function in reverse.
+    // Playing in reverse direction deopts Safari so instead we rearranged the keyframes in reverse.
     const flip = reverse ? !isReverseAnimation : isReverseAnimation;
-    // Next we're going to generate an easing function that plays each frame and eventually stops
-    // at the clamped destination time.
-    let duration = frameRate;
 
-    let fractionOfRangeSpaned = timing.duration / 100;
-    let velocityPerFrame = velocity * frameRate;
-
-    const r = ((100 / timing.duration) * frameRate) / Math.abs(range);
-    const minV = minimumVelocity * r;
-    let v = velocity * r;
-    let t = ((clampedCurrent - minTime) / 100) * (100 / timing.duration);
-    const e = ((clampedDestination - minTime) / 100) * (100 / timing.duration);
-    let easing = "linear(" + (t < 0 ? 0 : t > 1 ? 1 : t);
-    while (reverse ? t > e : t < e) {
-      t += v;
-      duration += frameRate;
-      easing += "," + (t < 0 ? 0 : t > 1 ? 1 : t);
-      if (reverse ? v < -minV : v > minV) {
-        v *= decelerationRatePerFrame;
-      }
-    }
-    t = e;
-    easing += "," + (t < 0 ? 0 : t > 1 ? 1 : t);
-    easing += ")";
-    let dist =
-      currentTime < minTime
-        ? minTime - currentTime
+    // delay and duration effectively work as rangeStart/End of the timeline. we clamp the destination.
+    const minTime = timing.delay;
+    const maxTime = timing.delay + timing.duration;
+    let minOffset =
+      (currentTime < minTime
+        ? minTime
         : currentTime > maxTime
-        ? currentTime - maxTime
-        : 0;
-    dist *= Math.abs(range) / 100; // delay in pixels
-    let delay = frameRate;
-    v = Math.abs(velocity);
-    while (dist > 0) {
-      dist -= v * frameRate;
-      delay += frameRate;
-      if (v > minimumVelocity) {
-        v *= decelerationRatePerFrame;
+        ? maxTime
+        : currentTime) / 100;
+    let maxOffset =
+      (destinationTime < minTime
+        ? minTime
+        : destinationTime > maxTime
+        ? maxTime
+        : destinationTime) / 100;
+    if (reverse) {
+      let temp = minOffset;
+      minOffset = maxOffset;
+      maxOffset = temp;
+    }
+
+    // Copy any intermediate keyframes between the currentTime and destinationTime with
+    // offsets adjusted for the new coordinate space between those times.
+    const keyframes = effect.getKeyframes();
+    let animatedProperties = [];
+    let innerStartIdx = -1;
+    let innerEndIdx = -1;
+    for (let j = 0; j < keyframes.length; j++) {
+      const keyframe = keyframes[j];
+      for (let prop in keyframe) {
+        if (
+          prop !== "offset" &&
+          prop !== "computedOffset" &&
+          prop !== "easing" &&
+          prop !== "composite" &&
+          keyframe.hasOwnProperty(prop)
+        ) {
+          // Collect the name of any animated properties.
+          if (animatedProperties.indexOf(prop) === -1) {
+            animatedProperties.push(prop);
+          }
+        }
+      }
+      let offset = keyframe.computedOffset;
+      if (offset > minOffset && offset < maxOffset) {
+        if (innerStartIdx === -1) {
+          innerStartIdx = j;
+        }
+        innerEndIdx = j;
+        offset = (offset - minOffset) / (maxOffset - minOffset);
+        // Adjust the new offset. This is a copy so we can mutate it.
+        keyframe.offset = reverse ? 1 - offset : offset;
+        keyframe.computedOffset = undefined;
+        // We'll override the easing.
+        keyframe.easing = undefined;
       }
     }
-    const newEffect = new KeyframeEffect(effect);
-    newEffect.updateTiming({
+    const newKeyframes =
+      innerStartIdx > -1 ? keyframes.slice(innerStartIdx, innerEndIdx + 1) : [];
+    if (flip) {
+      newKeyframes.reverse();
+    }
+
+    // Compute the interpolated values of the keyframes at the start and stop keyframes
+    // This is a live view of styles so we can reuse the same one for start and end.
+    const computedStyle = getComputedStyle(effect.target, effect.pseudoElement);
+    const startKeyframe = { offset: 0 };
+    for (let k = 0; k < animatedProperties.length; k++) {
+      const prop = animatedProperties[k];
+      startKeyframe[prop] = computedStyle.getPropertyValue(prop);
+    }
+    animation.currentTime = destinationTime;
+    const endKeyframe = { offset: 1 };
+    for (let k = 0; k < animatedProperties.length; k++) {
+      const prop = animatedProperties[k];
+      endKeyframe[prop] = computedStyle.getPropertyValue(prop);
+    }
+
+    newKeyframes.unshift(startKeyframe);
+    newKeyframes.push(endKeyframe);
+
+    console.log(newKeyframes);
+
+    let delay = 10;
+    let duration = 500;
+    let easing = "cubic-bezier(.25,.46,.45,1)";
+    const momentumEffect = new KeyframeEffect(effect.target, newKeyframes, {
       delay: delay,
       duration: duration,
-      direction: "normal",
       fill: "both",
       easing: easing,
+      composite: effect.composite,
+      pseudoElement: effect.pseudoElement,
     });
-    animation.effect = newEffect;
+    animation.effect = momentumEffect;
     animation.playbackRate = 1;
     animation.currentTime = 0;
+    this._pendingFinish++;
+    animation.addEventListener('finish', this._finishListener);
   }
   this.currentTime = destinationTime;
 }
 
-function finishAnimation() {}
+function finishAnimation() {
+  if (--this._pendingFinish === 0) {
+    console.log('settled');
+    this._resolveSettled();
+    this.settled = new Promise((resolve) => (this._resolveSettled = resolve));
+  }
+}
 
 export default class TouchPanTimeline {
   constructor({ source, axis, touch, range, snap, decelerationRate }) {
@@ -223,14 +299,15 @@ export default class TouchPanTimeline {
     this.axis = axis;
     this.rangeStart = rangeStart;
     this.rangeEnd = rangeEnd;
-    this.snap = Array.isArray(snap) ? snap : null;
+    this.snap =
+      typeof snap === "number" ? [snap] : Array.isArray(snap) ? snap : null;
     this.decelerationRate =
       decelerationRate == null
         ? 0.998 // iOS-like decelaration rate. TODO: Detect OS and adjust.
         : decelerationRate;
-    let resolve;
-    this.settled = new Promise((r) => (resolve = r));
     this.currentTime = (100 * -rangeStart) / (rangeEnd - rangeStart);
+    this.settled = new Promise((resolve) => (this._resolveSettled = resolve));
+    this._status = IDLE;
     this._activeAnimations = [];
     this._stashedEffects = [];
     this._previousEvent = touch;
@@ -238,13 +315,15 @@ export default class TouchPanTimeline {
     this._startListener = touchStart.bind(this);
     this._moveListener = touchMove.bind(this);
     this._endListener = touchEnd.bind(this);
+    this._readyListener = readyToStart.bind(this);
+    this._pendingFinish = 0;
     this._finishListener = finishAnimation.bind(this);
-    this._resolveSettled = resolve;
   }
   animate(animation) {
     const activeAnimations = this._activeAnimations;
     if (activeAnimations.indexOf(animation) > -1) {
       // We're already driving this animation.
+      // TODO: Should we ref count or error?
       return () => {};
     }
     const source = this.source;
@@ -252,14 +331,13 @@ export default class TouchPanTimeline {
       source.addEventListener("touchstart", this._startListener);
       source.addEventListener("touchmove", this._moveListener);
       source.addEventListener("touchend", this._endListener);
+      source.addEventListener("touchcancel", this._endListener);
     }
     activeAnimations.push(animation);
     this._stashedEffects.push(null);
     animation.playbackRate = 0;
     animation.currentTime = this.currentTime;
-    animation.addEventListener("finish", this._finishListener);
     return () => {
-      animation.removeEventListener("finish", this._finishListener);
       const activeAnimations = this._activeAnimations;
       const stashedEffects = this._stashedEffects;
       const idx = activeAnimations.indexOf(animation);
@@ -267,10 +345,15 @@ export default class TouchPanTimeline {
         activeAnimations.splice(idx, 1);
         stashedEffects.splice(idx, 1);
       }
+      animation.removeEventListener('finish', this._finishListener);
+      if (this._status === MOMENTUM && animation.playState !== 'finished') {
+        this._pendingFinish--;
+      }
       if (activeAnimations.length === 0) {
         source.removeEventListener("touchstart", this._startListener);
         source.removeEventListener("touchmove", this._moveListener);
         source.removeEventListener("touchend", this._endListener);
+        source.removeEventListener("touchcancel", this._endListener);
       }
     };
   }

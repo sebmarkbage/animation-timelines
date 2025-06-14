@@ -117,7 +117,7 @@ interface TouchPanTimeline extends CustomTimeline {
     axis?: 'block' | 'inline' | 'x' | 'y',
     touch?: TouchEvent,
     range?: number | [number, number],
-    snap?: Array<number>,
+    snap?: number | Array<number>,
     decelerationRate?: number,
   }): TouchPanTimeline;
   source: Element;
