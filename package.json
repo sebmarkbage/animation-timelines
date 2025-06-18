@@ -1,7 +1,7 @@
 {
   "name": "animation-timelines",
   "description": "A collection of Custom AnimationTimeline for use with Web Animations.",
-  "version": "0.0.2",
+  "version": "0.0.4",
   "keywords": [
     "AnimationTimeline",
     "ScrollTimeline",
@@ -13,13 +13,17 @@
   "files": [
     "LICENSE",
     "README.md",
+    "index.js",
     "scroll-timeline.js",
-    "view-timeline.js"
+    "touch-pan-timeline.js",
+    "view-timeline.js",
+    "utils/"
   ],
   "type": "module",
   "exports": {
     ".": "./index.js",
     "./scroll-timeline": "./scroll-timeline.js",
+    "./touch-pan-timeline": "./touch-pan-timeline.js",
     "./view-timeline": "./view-timeline.js",
     "./package.json": "./package.json"
   },
