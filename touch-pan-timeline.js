@@ -73,8 +73,9 @@ function touchStart(event) {
         const keyframes = effect.getKeyframes();
         let lastKeyframeIdx = keyframes.length;
         for (let i = 0; i < keyframes.length; i++) {
-          if (keyframes[i].computedOffset > progress) {
+          if (keyframes[i].computedOffset >= progress) {
             lastKeyframeIdx = i;
+            break;
           }
         }
         keyframes.splice(
@@ -194,14 +195,57 @@ function touchEnd(event) {
     velocity = minimumVelocity;
   }
 
-  const currentTime = this.currentTime;
+  let currentTime = this.currentTime;
 
   // Snap the destination in pixel coordinate space.
   const rangeStart = this.rangeStart;
   const rangeEnd = this.rangeEnd;
   const range = rangeEnd - rangeStart;
-  const currentPosition = rangeStart + (currentTime * range) / 100;
-  const destination = currentPosition + distance;
+  let currentPosition = rangeStart + (currentTime * range) / 100;
+  // If we started outside the range, clamp it to the beginning of the range.
+  // Which is what we expect the visuals to be clamped to.
+  if (rangeEnd > rangeStart) {
+    if (currentPosition < rangeStart) {
+      currentTime = 0;
+      currentPosition = rangeStart;
+    } else if (currentPosition > rangeEnd) {
+      currentTime = 100;
+      currentPosition = rangeEnd;
+    }
+  } else {
+    if (currentPosition > rangeStart) {
+      currentTime = 0;
+      currentPosition = rangeStart;
+    } else if (currentPosition < rangeEnd) {
+      currentTime = 100;
+      currentPosition = rangeEnd;
+    }
+  }
+  const targetDestination = currentPosition + distance;
+  let destination = targetDestination;
+  // Clamp the destination to end of the range.
+  if (rangeEnd > rangeStart) {
+    if (destination < rangeStart) {
+      destination = rangeStart;
+    } else if (destination > rangeEnd) {
+      destination = rangeEnd;
+    }
+  } else {
+    if (destination > rangeStart) {
+      destination = rangeStart;
+    } else if (destination < rangeEnd) {
+      destination = rangeEnd;
+    }
+  }
+  // Track how much we've overshot the bounds.
+  let overscrollFactor =
+    destination === currentPosition
+      ? 1
+      : Math.abs(distance / (destination - currentPosition));
+  if (overscrollFactor < 1) {
+    overscrollFactor = 1; // Float precision bug
+  }
+
   let snappedDestination = destination;
   const snap = this.snap;
   if (snap) {
@@ -213,21 +257,6 @@ function touchEnd(event) {
       if (snapDelta < bestDelta) {
         snappedDestination = snapPoint;
         bestDelta = snapDelta;
-      }
-    }
-  } else {
-    // Otherwise, clamp the destination to end of the range.
-    if (rangeEnd > rangeStart) {
-      if (snappedDestination < rangeStart) {
-        snappedDestination = rangeStart;
-      } else if (snappedDestination > rangeEnd) {
-        snappedDestination = rangeEnd;
-      }
-    } else {
-      if (snappedDestination > rangeStart) {
-        snappedDestination = rangeStart;
-      } else if (snappedDestination < rangeEnd) {
-        snappedDestination = rangeEnd;
       }
     }
   }
@@ -255,7 +284,7 @@ function touchEnd(event) {
 
     // delay and duration effectively work as rangeStart/End of the timeline. we clamp the destination.
     const minTime = timing.delay;
-    const maxTime = timing.delay + timing.duration;
+    const maxTime = minTime + timing.duration;
     const startOffset =
       (currentTime < minTime
         ? minTime
@@ -281,7 +310,8 @@ function touchEnd(event) {
       let offset = keyframe.computedOffset;
       if (offset > minOffset && offset < maxOffset) {
         offset = (offset - minOffset) / (maxOffset - minOffset);
-        const clone = { offset: reverse ? 1 - offset : offset };
+        offset = (reverse ? 1 - offset : offset) / overscrollFactor;
+        const clone = { offset: offset };
         newKeyframes.push(clone);
         for (let prop in keyframe) {
           if (
@@ -329,15 +359,19 @@ function touchEnd(event) {
         computedStyle.getPropertyValue(prop) || computedStyle[prop];
     }
     animation.currentTime = destinationTime;
-    const endKeyframe = { offset: 1 };
+    const stopKeyframe = { offset: 1 / overscrollFactor };
+    const fillKeyframe = { offset: 1 };
     for (let k = 0; k < animatedProperties.length; k++) {
       const prop = animatedProperties[k];
-      endKeyframe[prop] =
+      fillKeyframe[prop] = stopKeyframe[prop] =
         computedStyle.getPropertyValue(prop) || computedStyle[prop];
     }
 
     newKeyframes.unshift(startKeyframe);
-    newKeyframes.push(endKeyframe);
+    newKeyframes.push(stopKeyframe);
+    if (overscrollFactor > 1) {
+      newKeyframes.push(fillKeyframe);
+    }
 
     // Stash the old timing and keyframes so we can restore it later.
     stashedEffects[i] = {
@@ -346,11 +380,8 @@ function touchEnd(event) {
       animatedProperties,
     };
 
-    // TODO: Adjust if we started out of bounds.
-    let delay = 0; // Setting to non zero might deopt Safari.
-
     effect.updateTiming({
-      delay: delay,
+      delay: 0, // Setting to non zero deopts Safari. We adjust keyframes instead.
       duration: duration,
       fill: "both",
       easing: DECELERATION_CURVE,
