@@ -14,6 +14,40 @@ const PENDING_RESTART = 1;
 const PANNING = 2;
 const MOMENTUM = 3;
 
+let tempElement;
+let tempAnimation;
+function makeInterpolationAnimation(animation) {
+  if (!animation.effect.pseudoElement) {
+    // We don't need a separate one if there's no pseudoElement.
+    return animation;
+  }
+  // In Safari, you cannot read the interpolated result of an Animation using getComputedStyle.
+  // To work around this bug, we apply the animation to a temporary DOM node to read back its
+  // interpolated result. It's not perfect since it won't have the same committed styles as
+  // the original element but animated properties tend to get filled in for all getKeyframes.
+  if (!tempElement) {
+    tempElement = document.createElement("div");
+    tempElement.style.position = "absolute";
+    tempAnimation = tempElement.animate([]);
+    tempAnimation.playbackRate = 0;
+  }
+  if (!tempElement.parentNode) {
+    document.body.appendChild(tempElement);
+  }
+  const effect = animation.effect;
+  const tempEffect = tempAnimation.effect;
+  tempEffect.setKeyframes(effect.getKeyframes());
+  tempEffect.updateTiming(effect.getTiming());
+  tempAnimation.currentTime = animation.currentTime;
+  return tempAnimation;
+}
+
+function cleanUpInterpolationTarget() {
+  if (tempElement) {
+    tempElement.remove();
+  }
+}
+
 function touchStart(event) {
   if (this._status !== IDLE && this._status !== MOMENTUM) {
     // Did not expect to start again.
@@ -54,10 +88,10 @@ function touchStart(event) {
         // Shift forward to compute the keyframe where we'll stop.
         const originalTime = animation.currentTime;
         const overshootTime = timing.delay + timing.duration * progressInTime;
-        animation.currentTime = overshootTime;
+        const interpolationAnimation = makeInterpolationAnimation(animation);
+        interpolationAnimation.currentTime = overshootTime;
         const computedStyle = getComputedStyle(
-          effect.target,
-          effect.pseudoElement
+          interpolationAnimation.effect.target
         );
         const stopKeyframe = { offset: progress };
         const fillKeyframe = { offset: 1 };
@@ -351,14 +385,17 @@ function touchEnd(event) {
 
     // Compute the interpolated values of the keyframes at the start and stop keyframes
     // This is a live view of styles so we can reuse the same one for start and end.
-    const computedStyle = getComputedStyle(effect.target, effect.pseudoElement);
+    const interpolationAnimation = makeInterpolationAnimation(animation);
+    const computedStyle = getComputedStyle(
+      interpolationAnimation.effect.target
+    );
     const startKeyframe = { offset: 0 };
     for (let k = 0; k < animatedProperties.length; k++) {
       const prop = animatedProperties[k];
       startKeyframe[prop] =
         computedStyle.getPropertyValue(prop) || computedStyle[prop];
     }
-    animation.currentTime = destinationTime;
+    interpolationAnimation.currentTime = destinationTime;
     const stopKeyframe = { offset: 1 / overscrollFactor };
     const fillKeyframe = { offset: 1 };
     for (let k = 0; k < animatedProperties.length; k++) {
@@ -385,8 +422,6 @@ function touchEnd(event) {
       duration: duration,
       fill: "both",
       easing: DECELERATION_CURVE,
-      composite: effect.composite,
-      pseudoElement: effect.pseudoElement,
     });
     effect.setKeyframes(newKeyframes);
     animation.currentTime = 0;
@@ -394,6 +429,7 @@ function touchEnd(event) {
     this._pendingFinish++;
     animation.addEventListener("finish", this._finishListener);
   }
+  cleanUpInterpolationTarget();
 
   this._momentumStart = performance.now();
   this._momentumDuration = duration;
